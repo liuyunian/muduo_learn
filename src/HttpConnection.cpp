@@ -8,8 +8,10 @@
 #include <sys/socket.h> // recv send
 #include <fcntl.h>      // open
 #include <sys/mman.h>
+
+#include <tools_cxx/log.h>
  
-#include "c_http_connection.h"
+#include "HttpConnection.h"
 
 #define MAX_BUF_SZ 2048
 #define DEFAULT_KEEP_ALIVE_TIME 10
@@ -31,44 +33,45 @@ static std::unordered_map<std::string,std::string> mime = {
     {"default", "text/html"}
 };
 
-Connection::Connection(int sockfd) : 
-    m_sockfd(sockfd){}
+HttpConnection::HttpConnection(std::unique_ptr<Channel> & channel) : 
+    m_connectionChannel(std::move(channel)),
+    m_sockfd(m_connectionChannel->get_fd()),
+    m_pos(0)
+{
+    m_connectionChannel->set_readCallback(std::bind(&HttpConnection::handle_read, this));
+    m_connectionChannel->enable_reading();
+}
 
-Connection::~Connection(){}
-
-int Connection::parse(){
+void HttpConnection::handle_read(){
     clear();
 
     ssize_t len = recv_msg();
     if(len < 0){
-        return -1;
+        LOG_SYSERR("接收数据出错");
+        return;
     }
     else if(len == 0){
-        return 0;
+        // TODO: 连接断开
+        LOG_INFO("连接断开");
+        m_connectionChannel->disable_reading();
+        m_connectionChannel->remove();
+
+        return;
     }
 
     // std::cout << m_recvBuf << std::endl;
 
-    int ret = parse_request();
-    if(ret < 0){
-        return -1;
-    }
+    parse_request();
+    parse_header();
 
-    ret = parse_header();
-    if(ret < 0){
-        return -1;
-    }
-
-    return 1; // 正常情况
+    process_request();
 }
 
-int Connection::parse_request(){
-    int ret = 0;
+void HttpConnection::parse_request(){
     std::string content;
 
-    ret = get_content(content, " /"); // 获取http请求行中的method
-    if(ret < 0){
-        return -1;
+    if(get_content(content, " /") < 0){             // 获取http请求行中的method
+        LOG_ERR("解析http请求行中的methed出错");
     }
 
     if(content == "GET"){
@@ -81,16 +84,13 @@ int Connection::parse_request(){
         m_http.method = OTHER_METHOD;
     }
 
-    ret = get_content(content, " "); // 获取http请求行中的url
-    if(ret < 0){
-        return -1;
+    if(get_content(content, " ") < 0){              // 获取http请求行中的url
+        LOG_ERR("解析http请求行中的url出错");
     }
-
     m_http.url = content;
 
-    ret = get_content(content, "\r\n"); // 获取http请求行中的url
-    if(ret < 0){
-        return -1;
+    if(get_content(content, "\r\n") < 0){          // 获取http请求行中的http版本
+        LOG_ERR("解析http请求行中的http版本出错");
     }
 
     if(content == "HTTP/1.0"){
@@ -102,59 +102,46 @@ int Connection::parse_request(){
     else{
         m_http.version = OTHER_VERSION;
     }
-
-    return 0;
 }
 
-int Connection::parse_header(){
+void HttpConnection::parse_header(){
     /*
         Host: localhost:10000
         Connection: keep-alive
         Cache-Control: max-age=0
         Accept-Language: zh-CN,zh;q=0.9
-    */
 
-    /**
      * 如上是http请求头部部分数据，可以看出满足key-value格式，所以这里采用unordered_map来存储
     */
     
-    int ret = 0;
     std::string key, value;
     while(m_recvBuf[m_pos] != '\r' && m_recvBuf[m_pos + 1] != '\n'){
-        ret = get_content(key, ": ");
-		if(ret < 0){
-            return -1;
+		if(get_content(key, ": ") < 0){
+            LOG_ERR("解析http请求头部数据的key值出错");
         }
 
-        ret = get_content(value, "\r\n");
-		if(ret < 0){
-            return -1;
+		if(get_content(value, "\r\n") < 0){
+            LOG_ERR("解析http请求头部数据的value值出错");
         }
 
 		m_http.header.insert({key, value});
 	}
-
-	return 0;
 }
 
-void Connection::process_request(){
-    // 判断请求方式
-    if(m_http.method == GET){
-        // 解析URL
-    
-        struct stat sbuf;
-        int ret = stat(m_http.url.c_str(), &sbuf);
-        if(ret < 0){
-            perror("访问的文件不存在");
+void HttpConnection::process_request(){
+    if(m_http.method == GET){                               // 判断请求方式
+        struct stat sbuf;                                   // 解析URL
+        if(stat(m_http.url.c_str(), &sbuf) < 0){
+            LOG_SYSERR("访问的文件不存在");
 
             fill_response_header(HTTP_NO_FOUND, nullptr);
         }
         else{
             fill_response_header(HTTP_OK, &sbuf);
 
-            int srcfd=open(m_http.url.c_str(), O_RDONLY, 0);
+            int srcfd = open(m_http.url.c_str(), O_RDONLY, 0);
             if(srcfd < 0){
-                perror("打开请求文件失败");
+                LOG_SYSERR("打开请求文件失败");
                 return;
             }
 
@@ -168,7 +155,7 @@ void Connection::process_request(){
         // std::cout << m_sendBuf << std::endl;
 
         if(send_msg() < 0){
-            perror("发送响应消息失败");
+            LOG_SYSERR("发送响应消息失败");
             return;
         }
     }
@@ -180,7 +167,7 @@ void Connection::process_request(){
     }
 }
 
-int Connection::get_content(std::string & content, std::string sepa){
+int HttpConnection::get_content(std::string & content, std::string sepa){
     int index = m_recvBuf.find(sepa, m_pos);
     if(index == std::string::npos){ // 没有找到指定的分隔符
         return -1;
@@ -192,7 +179,7 @@ int Connection::get_content(std::string & content, std::string sepa){
     return 0;
 }
 
-void Connection::clear(){
+void HttpConnection::clear(){
     m_recvBuf.clear();
     m_sendBuf.clear();
 
@@ -201,34 +188,29 @@ void Connection::clear(){
     m_http.url.clear();
 }
 
-ssize_t Connection::recv_msg(){
+ssize_t HttpConnection::recv_msg(){
     ssize_t len = 0;
-    ssize_t recvSize = 0;
     char buf[MAX_BUF_SZ];
     for(;;){
         len = recv(m_sockfd, buf, MAX_BUF_SZ, 0);
         if(len < 0){
-            if(errno == EINTR){ // 信号中断产生的错误
+            if(errno == EINTR){                                             // 信号中断产生的错误
                 continue;
             }
-            else if(errno == EAGAIN){
-                return recvSize;
-            }
             else{
-                perror("接收数据出错");
                 return -1;
             }
         }
-        else if(len == 0){ // 连接断开
+        else if(len == 0){                                                  // 连接断开
             return 0;
         }
 
-        recvSize += len;
         m_recvBuf += std::string(buf, buf + len);
+        return len;
     }
 }
 
-void Connection::fill_response_header(Http_stateCode stateCode, struct stat * p_sbuf){
+void HttpConnection::fill_response_header(Http_stateCode stateCode, struct stat * p_sbuf){
     switch(m_http.version){
     case HTTPV1_0:
         m_sendBuf = "HTTP/1.0 ";
@@ -273,7 +255,7 @@ void Connection::fill_response_header(Http_stateCode stateCode, struct stat * p_
     m_sendBuf += "\r\n";
 }
 
-ssize_t Connection::send_msg(){
+ssize_t HttpConnection::send_msg(){
     const char * sendBuf = m_sendBuf.c_str();
     size_t bufSize = m_sendBuf.size();
     ssize_t len = 0;

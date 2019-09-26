@@ -32,3 +32,6 @@
 *.app
 webserver
 
+# build
+build/
+

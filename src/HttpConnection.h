@@ -1,10 +1,12 @@
-#ifndef C_HTTP_CONNECTION_H_
-#define C_HTTP_CONNECTION_H_
+#ifndef HTTPCONNECTION_H_
+#define HTTPCONNECTION_H_
 
 #include <string>
 #include <unordered_map>
 
 #include <sys/epoll.h>
+
+#include "reactor/Channel.h"
 
 enum Http_method{
     GET,
@@ -23,30 +25,27 @@ enum Http_stateCode{
     HTTP_NO_FOUND = 404
 };
 
-class Connection{
+class HttpConnection{
 public:
-    Connection(int sockfd);
-    ~Connection();
+    HttpConnection(std::unique_ptr<Channel> & channel);
+    ~HttpConnection() = default;
 
-    int parse();
+    void handle_read();
 
     void process_request();
-
-public:
-    epoll_event m_event;
 
 private:
     void clear();
 
+    void parse_request();
+
+    void parse_header();
+
+    int get_content(std::string & content, std::string sepa);
+
     ssize_t recv_msg();
 
     ssize_t send_msg();
-
-    int parse_request();
-
-    int parse_header();
-
-    int get_content(std::string & content, std::string sepa);
 
     void fill_response_header(Http_stateCode stateCode, struct stat * p_sbuf);
 
@@ -58,6 +57,7 @@ private:
     };
 
 private:
+    std::unique_ptr<Channel> m_connectionChannel;
     int m_sockfd;
 
     std::string m_recvBuf;
@@ -67,4 +67,4 @@ private:
     int m_pos; // 记录解析http协议的位置
 };
 
-#endif // C_HTTP_CONNECTION_H_
+#endif // HTTPCONNECTION_H_

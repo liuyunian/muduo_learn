@@ -1,13 +1,17 @@
-CC = g++
-CXXFLAGS = -lpthread -std=c++11
-OBJS = c_http_connection.o c_server.o main.o
-TARGET = webserver
+BUILD_DIR = ./build
+RM = rm -rf
 
-$(TARGET) : $(OBJS)
-	$(CC) -o $(TARGET) $(OBJS)
+all: build
+	cd $(BUILD_DIR); make
 
-$(OBJS) : %.o:%.cpp
-	$(CC) -c $< -o $@ $(CXXFLAGS)
+build:
+	mkdir $(BUILD_DIR); cd $(BUILD_DIR); cmake -D CMAKE_CXX_COMPILER=/usr/bin/g++ ..
+
+install:
+	cd $(BUILD_DIR); sudo make install
+
+uninstall:
+	cd $(BUILD_DIR); cat install_manifest.txt | sudo xargs $(RM)
 
 clean:
-	-$(RM) $(OBJS) $(TARGET)
+	-$(RM) $(BUILD_DIR)

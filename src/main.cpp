@@ -3,7 +3,7 @@
 #include <unistd.h> // getopt
 #include <stdlib.h> // exit
 
-#include "c_server.h"
+#include "Server.h"
 
 static void printUsage(std::ostream& os, const std::string& programName){
   os << "Usage: " << programName << " [Options...]\n"
@@ -20,7 +20,7 @@ int main(int argc, char * argv[]){
         exit(1);
     }
 
-    int listenport = 0;
+    int listenPort = 0;
     int opt;
     while((opt = getopt(argc, argv, "hp:")) != -1){
         switch (opt) {
@@ -28,7 +28,7 @@ int main(int argc, char * argv[]){
             printUsage(std::cout, programName);
             exit(0);
         case 'p':
-            listenport = std::stoi(optarg);
+            listenPort = std::stoi(optarg);
             break;
         default:
             printUsage(std::cerr, programName);
@@ -36,7 +36,7 @@ int main(int argc, char * argv[]){
         }
     }
 
-    Server server(listenport);
+    Server server(listenPort);
     server.run();
 
     return 0;
