@@ -5,6 +5,7 @@
 ## 依赖
 * 操作系统：Linux
 * 编译器：g++ 7.4
+* 依赖库：tools_cxx -- [自行封装的C++工具库](https://github.com/liuyunian/tools-cxx)
 
 ## 编译
 ```
