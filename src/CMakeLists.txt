@@ -11,7 +11,7 @@ SET(SRCS
 
 # ========================= build ==========================
 ADD_EXECUTABLE(webserver ${SRCS})
-TARGET_LINK_LIBRARIES(webserver tools_log tools_base)
+TARGET_LINK_LIBRARIES(webserver tools_log tools_base boost_filesystem boost_system)
 
 # ========================= install ========================
 # webserver -- install path = /usr/local/bin

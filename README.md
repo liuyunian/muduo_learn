@@ -2,19 +2,21 @@
 使用C++11实现Web服务器  
 代码学习自：https://github.com/viktorika/Webserver
 
-## 依赖
+## 环境 & 依赖
 * 操作系统：Linux
 * 编译器：g++ 7.4
-* 依赖库：tools_cxx -- [自行封装的C++工具库](https://github.com/liuyunian/tools-cxx)
+* boost库
+* tools_cxx -- [自行封装的C++工具库](https://github.com/liuyunian/tools-cxx)
 
-## 编译
+## 编译 & 安装
 ```
 make
+make install
 ```
 
 ## 使用
-```sh
-./webserver [Options...]
+```
+webserver [Options...]
     Options:
         -h          帮助
         -p <port>   指定监听端口

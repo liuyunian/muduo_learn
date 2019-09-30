@@ -2,7 +2,7 @@
 
 #include <sys/stat.h>   // stat
 #include <errno.h>      // errno
-#include <stdio.h>      // perror
+#include <stdlib.h>     // getenv
 #include <unistd.h>     // close
 #include <string.h>     // memset
 #include <sys/socket.h> // recv send
@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 
 #include <tools_cxx/log.h>
+#include <boost/filesystem.hpp>
  
 #include "HttpConnection.h"
 
@@ -130,8 +131,11 @@ void HttpConnection::parse_header(){
 
 void HttpConnection::process_request(){
     if(m_http.method == GET){                               // 判断请求方式
+        boost::filesystem::path curPath(::getenv("PWD"));
+        const char * staticResourcePath = curPath.append("/").append(m_http.url).c_str();
+
         struct stat sbuf;                                   // 解析URL
-        if(stat(m_http.url.c_str(), &sbuf) < 0){
+        if(stat(staticResourcePath, &sbuf) < 0){
             LOG_SYSERR("访问的文件不存在");
 
             fill_response_header(HTTP_NO_FOUND, nullptr);
@@ -139,7 +143,7 @@ void HttpConnection::process_request(){
         else{
             fill_response_header(HTTP_OK, &sbuf);
 
-            int srcfd = open(m_http.url.c_str(), O_RDONLY, 0);
+            int srcfd = open(staticResourcePath, O_RDONLY, 0);
             if(srcfd < 0){
                 LOG_SYSERR("打开请求文件失败");
                 return;
