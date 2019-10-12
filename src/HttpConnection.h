@@ -2,6 +2,7 @@
 #define HTTPCONNECTION_H_
 
 #include <string>
+#include <functional>
 #include <unordered_map>
 
 #include <sys/epoll.h>
@@ -27,8 +28,10 @@ enum Http_stateCode{
 
 class HttpConnection{
 public:
-    HttpConnection(std::unique_ptr<Channel> & channel);
-    ~HttpConnection() = default;
+    typedef std::function<void()> CloseCallback;
+
+    HttpConnection(Channel* channel, const CloseCallback& cb);
+    ~HttpConnection();
 
     void handle_read();
 
@@ -57,14 +60,14 @@ private:
     };
 
 private:
-    std::unique_ptr<Channel> m_connectionChannel;
-    int m_sockfd;
+    Channel* m_connChannel;
+    CloseCallback m_closeCallback;
 
     std::string m_recvBuf;
     std::string m_sendBuf;
 
     HttpProtocol m_http;
-    int m_pos; // 记录解析http协议的位置
+    int m_pos;              // 记录解析http协议的位置
 };
 
 #endif // HTTPCONNECTION_H_

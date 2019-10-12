@@ -1,6 +1,6 @@
 #include <poll.h>           // poll POLLIN ...
 #include <assert.h>         // assert
-#include <tools_cxx/log.h>
+#include <tools/log/log.h>
 
 #include "Channel.h"
 
@@ -15,13 +15,10 @@ Channel::Channel(EventLoop * loop, int fd) :
     m_revents(0),
     m_index(-1),
     m_tied(false),
-    m_eventHandling(false)
-{
-
-}
+    m_eventHandling(false){}
 
 Channel::~Channel(){
-    assert(!m_eventHandling);
+    // assert(!m_eventHandling);
 }
 
 void Channel::handleEvent(Timestamp receiveTime){

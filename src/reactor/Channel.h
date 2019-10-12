@@ -4,8 +4,9 @@
 #include <memory>
 #include <functional>
 
-#include <tools_cxx/noncopyable.h>
-#include <tools_cxx/Timestamp.h>
+#include <tools/base/noncopyable.h>
+#include <tools/base/Timestamp.h>
+#include <tools/socket/Socket.h>
 
 #include "EventLoop.h"
 
@@ -15,6 +16,9 @@ public:
     typedef std::function<void(Timestamp)> ReadEventCallback;   // 读事件回调函数类型，需要时间戳参数
 
     Channel(EventLoop * loop, int fd);
+
+    Channel(EventLoop * loop, Socket* socket);
+
     ~Channel();
 
     // get_xx is_xx set_xx
@@ -109,16 +113,18 @@ private:
     static const int k_readEvent;   // 读事件常量
     static const int k_writeEvent;  // 写事件常量
 
-    EventLoop * m_loop; // 记录所属的EventLoop对象
-    const int m_fd;     // 负责的文件描述符，不负责关闭该fd
-    int m_events;       // 关注的事件
-    int m_revents;      // poll/epoll返回的事件
-    int m_index;        // used by Poller，既用来表征在m_pollfdList中的位置又用于区分add/update操作
-    bool m_logHup;      // ??
+    EventLoop * m_loop;             // 记录所属的EventLoop对象
 
-    std::weak_ptr<void> m_tie;  // 指向绑定的对象
-    bool m_tied;                // 记录该Channel对象是否已经绑定
-    bool m_eventHandling;       // 是否正在处理事件
+    const int m_fd;                       // 负责的文件描述符，不负责关闭该fd
+
+    int m_events;                   // 关注的事件
+    int m_revents;                  // poll/epoll返回的事件
+    int m_index;                    // used by Poller，既用来表征在m_pollfdList中的位置又用于区分add/update操作
+    bool m_logHup;
+
+    std::weak_ptr<void> m_tie;      // 指向绑定的对象
+    bool m_tied;                    // 记录该Channel对象是否已经绑定
+    bool m_eventHandling;           // 是否正在处理事件
 
     ReadEventCallback m_readCallback;   // 读事件回调函数
     EventCallback m_writeCallback;      // 写事件回调函数

@@ -32,3 +32,8 @@ webserver [Options...]
 * 参考了muduo库加入了Reactor模式
 * 默认采用epoll LT模式 -- 没有有效的数据表明ET模式比LT模式更高效
 * 同时也支持poll -- 通过定义环境变量USE_POLL采用切换poll
+
+### version 3
+* 支持了favicon.icon
+* 使用tools_cxx中封装的Socket重构了代码
+* 修复了连接断开之后，部分资源没有释放的问题

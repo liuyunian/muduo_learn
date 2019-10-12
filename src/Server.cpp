@@ -1,84 +1,59 @@
-#include <iostream>
+#include <errno.h>  // errno
+#include <fcntl.h>  // open 
 
-#include <errno.h>
-#include <string.h>
-#include <fcntl.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-
-#include <tools_cxx/log.h>
+#include <tools/log/log.h>
+#include <tools/socket/Socket.h>
+#include <tools/socket/SocketsOps.h>
+#include <tools/socket/InetAddress.h>
+#include <tools/socket/ServerSocket.h>
 
 #include "Server.h"
 
-static void set_nonblocking(int sockfd){
-    int flags = fcntl(sockfd, F_GETFL, 0);                                  // 获取sockfd当前的标志
-    if(flags < 0){
-        LOG_SYSFATAL("调用fcntl(sockfd, F_GETFL, 0)获取套接字标志失败");
-    }
-
-    flags |= O_NONBLOCK;
-
-    if(fcntl(sockfd, F_SETFL, flags)){                                      // 设置sockfd标志
-        LOG_SYSFATAL("将套接字设置为非阻塞方式失败");
-    }
-}
-
-static int create_listenSockfd(int port){
-    int listenSockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if(listenSockfd < 0){
-        LOG_SYSFATAL("创建监听套接字失败");
-    }
-
-    set_nonblocking(listenSockfd);
-
-    struct sockaddr_in serv_addr;
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(port);
-    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    int on = 1;
-	if(setsockopt(listenSockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0){
-        LOG_SYSFATAL("调用setsockopt()设置监听套接字失败");
-    }
-
-    if(bind(listenSockfd, (struct sockaddr * )&serv_addr, sizeof(struct sockaddr)) < 0){
-        LOG_SYSFATAL("监听套接字绑定地址失败");
-    }
-
-    return listenSockfd;
-}
-
 Server::Server(int port) : 
     m_port(port),
-    m_listenSockfd(create_listenSockfd(m_port)),
-    m_loop(new EventLoop),
-    m_listenChannel(new Channel(m_loop.get(), m_listenSockfd))
+    m_idlefd(open("/dev/null", O_RDONLY | O_CLOEXEC)),
+    m_serverSocket(sockets::create_nonblocking_socket(AF_INET)),
+    m_listenChannel(&m_loop, m_serverSocket.get_sockfd())
 {
-    m_listenChannel->set_readCallback(std::bind(&Server::handle_connect, this));
-    m_listenChannel->enable_reading();
+    InetAddress addr(m_port);
+    m_serverSocket.set_reuseAddr(true);
+    m_serverSocket.bind(addr);
+
+    m_listenChannel.set_readCallback(std::bind(&Server::handle_connect, this));
+    m_listenChannel.enable_reading();
 }
 
-Server::~Server(){}
-
 void Server::run(){
-    if(listen(m_listenSockfd, BACKLOG) < 0){
-        LOG_SYSFATAL("调用listen()函数失败");
-    }
-
+    m_serverSocket.listen();
     LOG_INFO("服务器启动");
-    m_loop->loop();
+    m_loop.loop();
 }
 
 void Server::handle_connect(){
-    int connfd = accept(m_listenSockfd, (struct sockaddr * )NULL, NULL);
-    if(connfd < 0){
-        LOG_SYSERR("accept()执行失败");
+    Socket* connSocket = m_serverSocket.accept_nonblocking(nullptr);
+    if(connSocket == nullptr){
+        if(errno == EMFILE){                                                // 进程描述符已达到上限
+            sockets::close(m_idlefd);                                       // 关闭预留描述符，进程有了一个空闲描述符
+            connSocket = m_serverSocket.accept_nonblocking(nullptr);        // 此时可以正确的接受连接
+            delete connSocket;                                              // 服务器端优雅的关闭连接
+            
+            m_idlefd = open("/dev/null", O_RDONLY | O_CLOEXEC);             // 再次预留文件描述符
+            return;
+        }
+
+        LOG_SYSERR("accept()函数执行出错");
+        return;
     }
 
-    set_nonblocking(connfd);
+    Channel* connChannel = new Channel(&m_loop, connSocket->get_sockfd());
+    HttpConnection * hc = new HttpConnection(connChannel, std::bind(&Server::handle_close, this, connSocket));
+    m_connStore.insert({connSocket, hc});
+}
 
-    std::unique_ptr<Channel> connectionChannel(new Channel(m_loop.get(), connfd));
-    HttpConnection * hc = new HttpConnection(connectionChannel);
-    m_connectionStore.insert({connfd, hc});
+void Server::handle_close(Socket* socket){
+    auto iter = m_connStore.find(socket);
+    assert(iter != m_connStore.end());
+
+    delete iter->second;
+    delete socket;
 }

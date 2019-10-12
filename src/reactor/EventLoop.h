@@ -6,9 +6,9 @@
 #include <vector>
 
 #include <stdlib.h>
-#include <tools_cxx/Timestamp.h>
-#include <tools_cxx/noncopyable.h>
-#include <tools_cxx/CurrentThread.h>
+#include <tools/base/Timestamp.h>
+#include <tools/base/noncopyable.h>
+#include <tools/base/CurrentThread.h>
 
 class Channel;
 class Poller;

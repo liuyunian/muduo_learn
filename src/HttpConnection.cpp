@@ -3,13 +3,11 @@
 #include <sys/stat.h>   // stat
 #include <errno.h>      // errno
 #include <stdlib.h>     // getenv
-#include <unistd.h>     // close
-#include <string.h>     // memset
-#include <sys/socket.h> // recv send
 #include <fcntl.h>      // open
 #include <sys/mman.h>
 
-#include <tools_cxx/log.h>
+#include <tools/log/log.h>
+#include <tools/socket/SocketsOps.h>
 #include <boost/filesystem.hpp>
  
 #include "HttpConnection.h"
@@ -34,13 +32,17 @@ static std::unordered_map<std::string,std::string> mime = {
     {"default", "text/html"}
 };
 
-HttpConnection::HttpConnection(std::unique_ptr<Channel> & channel) : 
-    m_connectionChannel(std::move(channel)),
-    m_sockfd(m_connectionChannel->get_fd()),
+HttpConnection::HttpConnection(Channel* channel, const CloseCallback& cb) : 
+    m_connChannel(channel),
+    m_closeCallback(cb),
     m_pos(0)
 {
-    m_connectionChannel->set_readCallback(std::bind(&HttpConnection::handle_read, this));
-    m_connectionChannel->enable_reading();
+    m_connChannel->set_readCallback(std::bind(&HttpConnection::handle_read, this));
+    m_connChannel->enable_reading();
+}
+
+HttpConnection::~HttpConnection(){
+    delete m_connChannel;
 }
 
 void HttpConnection::handle_read(){
@@ -52,11 +54,11 @@ void HttpConnection::handle_read(){
         return;
     }
     else if(len == 0){
-        // TODO: 连接断开
         LOG_INFO("连接断开");
-        m_connectionChannel->disable_reading();
-        m_connectionChannel->remove();
+        m_connChannel->disable_reading();
+        m_connChannel->remove();
 
+        m_closeCallback();
         return;
     }
 
@@ -150,7 +152,7 @@ void HttpConnection::process_request(){
             }
 
             char * src_addr = (char *)mmap(NULL, sbuf.st_size, PROT_READ, MAP_PRIVATE, srcfd, 0);
-		    close(srcfd);
+		    sockets::close(srcfd);
 
             m_sendBuf += std::string(src_addr,src_addr+sbuf.st_size);
             munmap(src_addr,sbuf.st_size);
@@ -196,7 +198,7 @@ ssize_t HttpConnection::recv_msg(){
     ssize_t len = 0;
     char buf[MAX_BUF_SZ];
     for(;;){
-        len = recv(m_sockfd, buf, MAX_BUF_SZ, 0);
+        len = sockets::read(m_connChannel->get_fd(), buf, MAX_BUF_SZ);
         if(len < 0){
             if(errno == EINTR){                                             // 信号中断产生的错误
                 continue;
@@ -264,7 +266,7 @@ ssize_t HttpConnection::send_msg(){
     size_t bufSize = m_sendBuf.size();
     ssize_t len = 0;
     while(bufSize > 0){
-        len = send(m_sockfd, sendBuf, bufSize, 0);
+        len = sockets::write(m_connChannel->get_fd(), sendBuf, bufSize);
         if(len < 0){
             if(errno == EINTR){
                 len = 0;
