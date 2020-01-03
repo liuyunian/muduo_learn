@@ -1,0 +1,2 @@
+ADD_EXECUTABLE(TCPServer_test TCPServer_test.cpp)
+TARGET_LINK_LIBRARIES(TCPServer_test muduo_net tools_socket tools_log tools_base pthread)
